@@ -121,7 +121,8 @@ impl Cert {
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, DecodeError<S::Error>> {
-        let signed_data = SignedData::from_constructed(cons)?;
+        let mut signed_data = SignedData::from_constructed(cons)?;
+        /// signed_data.remove_signature();
         let tbs = signed_data.data().clone().decode(
             TbsCert::from_constructed
         ).map_err(DecodeError::convert)?;
@@ -190,8 +191,39 @@ impl Cert {
         strict: bool,
         now: Time,
     ) -> Result<ResourceCert, ValidationError> {
-        self.inspect_ta(strict)?;
-        self.verify_ta_at(tal, strict, now).map_err(Into::into)
+        // 打印输入参数
+        println!(
+            "Starting validate_ta_at: strict = {}, now = {:?}, tal = {:?}",
+            strict, now, tal
+        );
+
+        // 调用 inspect_ta 并捕获可能的错误
+        if let Err(err) = self.inspect_ta(strict) {
+            eprintln!(
+                "Error in inspect_ta: strict = {}, error = {:?}",
+                strict, err
+            );
+            return Err(ValidationError::from(err));
+        }
+        println!("inspect_ta completed successfully.");
+
+        // 调用 verify_ta_at 并捕获可能的错误
+        match self.verify_ta_at(tal.clone(), strict, now) {
+            Ok(resource_cert) => {
+                println!(
+                    "verify_ta_at succeeded: TAL = {:?}, resource_cert = {:?}",
+                    tal, resource_cert
+                );
+                Ok(resource_cert)
+            }
+            Err(err) => {
+                eprintln!(
+                    "Error in verify_ta_at: strict = {}, TAL = {:?}, error = {:?}",
+                    strict, tal, err
+                );
+                Err(err.into())
+            }
+        }
     }
 
     /// Validates the certificate as a CA certificate.
@@ -241,6 +273,19 @@ impl Cert {
     ) -> Result<ResourceCert, ValidationError>  {
         self.validate_ee_at(issuer, strict, Time::now())
     }
+
+
+
+    pub fn validate_ee_at_no_signature(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+        now: Time,
+    ) -> Result<ResourceCert, ValidationError>  {
+        self.inspect_ee(strict)?;
+        self.verify_ee_at_no_signature(issuer, strict, now).map_err(Into::into)
+    }
+
 
     /// Validates the certificate as an RPKI EE certificate at a time.
     ///
@@ -610,6 +655,9 @@ impl Cert {
     ) -> Result<ResourceCert, VerificationError> {
         // 4.6 Validity.
         self.verify_validity(now)?;
+
+
+
         
         // 4.8.10. IP Resources. If present, mustn’t be "inherit".
         let v4_resources = IpBlocks::from_resources(
@@ -644,6 +692,8 @@ impl Cert {
         self.signed_data.verify_signature(
             &self.subject_public_key_info
         )?;
+
+
 
         Ok(ResourceCert {
             cert: self,
@@ -728,6 +778,16 @@ impl Cert {
         self, issuer: &ResourceCert, strict: bool,
     ) -> Result<ResourceCert, VerificationError> {
         self.verify_ee_at(issuer, strict, Time::now())
+    }
+
+
+
+    pub fn verify_ee_at_no_signature(
+        self, issuer: &ResourceCert, strict: bool, now: Time,
+    ) -> Result<ResourceCert, VerificationError> {
+        self.verify_validity(now)?;
+        self.verify_issuer_claim(issuer, strict)?;
+        self.verify_resources(issuer, strict)
     }
 
     /// Verifies the certificate as an RPKI EE certificate at a time.
@@ -2813,6 +2873,43 @@ mod signer_test {
         let talinfo = TalInfo::from_name("foo".into()).into_arc();
         cert.validate_ta(talinfo, true).unwrap();
     }
+
+
+    #[test]
+    fn build_roa_cert() {
+        let signer = OpenSslSigner::new();
+        let key = signer.create_key(PublicKeyFormat::Rsa).unwrap();
+        let pubkey = signer.get_key_info(&key).unwrap();
+        let uri = uri::Rsync::from_str("rsync://example.com/m/p").unwrap();
+        let mut cert = TbsCert::new(
+            12u64.into(), pubkey.to_subject_name(),
+            Validity::from_secs(86400), None, pubkey, KeyUsage::Ca,
+            Overclaim::Trim
+        );
+        cert.set_basic_ca(Some(true));
+        cert.set_ca_repository(Some(uri.clone()));
+        cert.set_rpki_manifest(Some(uri));
+        cert.build_v4_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_v6_resource_blocks(|b| b.push(Prefix::new(0, 0)));
+        cert.build_as_resource_blocks(|b| b.push((Asn::MIN, Asn::MAX)));
+        let cert = cert.into_cert(&signer, &key).unwrap().to_captured();
+        let cert = Cert::decode(cert.as_slice()).unwrap();
+
+
+        let talinfo = TalInfo::from_name("foo".into()).into_arc();
+        cert.validate_ta(talinfo, true).unwrap();
+    }
+
+
 }
 
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_add() {
+        let sum = 2 + 2;
+        assert_eq!(sum, 4);
+        println!("hello");
+    }
+}

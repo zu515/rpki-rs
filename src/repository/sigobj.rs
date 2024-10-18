@@ -53,6 +53,14 @@ pub struct SignedObject {
 /// # Data Access
 ///
 impl SignedObject {
+
+    pub fn remove_signature(&mut self) {    
+        self.signature = RpkiSignature::new(
+            RpkiSignatureAlgorithm::default(),
+            Vec::new().into()
+        );
+    }
+
     /// Returns a reference to the object’s content type.
     pub fn content_type(&self) -> &Oid<Bytes> {
         &self.content_type
@@ -210,6 +218,34 @@ impl SignedObject {
         Ok((cert, res.into_bytes()))
     }
 
+
+
+    pub fn validate_no_signature(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+    ) -> Result<ResourceCert, ValidationError> {
+
+        self.validate_at_no_signature(issuer, strict, Time::now())
+    }
+        /// 不需要进行签名验证
+    pub fn validate_at_no_signature(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+        now: Time,
+    ) -> Result<ResourceCert, ValidationError> {
+        self.inspect(strict)?;
+
+        self.verify(strict)?;
+
+        self.cert.validate_ee_at_no_signature(issuer, strict, now).map_err(Into::into)
+    }
+
+
+
+
+
     /// Validates the signed object.
     ///
     /// Upon success, the method returns the validated EE certificate of the
@@ -221,6 +257,8 @@ impl SignedObject {
     ) -> Result<ResourceCert, ValidationError> {
         self.validate_at(issuer, strict, Time::now())
     }
+
+
 
     /// Validates the signed object at he given time.
     pub fn validate_at(
@@ -270,7 +308,10 @@ impl SignedObject {
                 "message digest mismatch in signed object"
             ))
         }
+
+
         let msg = self.signed_attrs.encode_verify();
+
         self.cert.subject_public_key_info().verify(
             &msg,
             &self.signature

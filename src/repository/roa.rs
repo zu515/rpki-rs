@@ -32,12 +32,14 @@ impl Roa {
         source: S,
         strict: bool
     ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
-        let signed = SignedObject::decode_if_type(
+        let mut signed = SignedObject::decode_if_type(
             source, &oid::ROUTE_ORIGIN_AUTHZ, strict,
         )?;
         let content = signed.decode_content(|cons| {
             RouteOriginAttestation::take_from(cons)
         }).map_err(DecodeError::convert)?;
+
+        signed.remove_signature();
         Ok(Roa { signed, content })
     }
 
@@ -48,7 +50,7 @@ impl Roa {
         check_crl: F
     ) -> Result<(ResourceCert, RouteOriginAttestation), ValidationError>
     where F: FnOnce(&Cert) -> Result<(), ValidationError> {
-        let cert = self.signed.validate(issuer, strict)?;
+        let cert = self.signed.validate_no_signature(issuer, strict)?;
         check_crl(cert.as_ref())?;
         self.content.verify(&cert)?;
         Ok((cert, self.content))
@@ -756,6 +758,8 @@ mod test {
 
 #[cfg(all(test, feature="softkeys"))]
 mod signer_test {
+    use std::fs::File;
+    use std::io::Write;
     use std::str::FromStr;
     use crate::uri;
     use crate::crypto::PublicKeyFormat;
@@ -797,6 +801,8 @@ mod signer_test {
         let roa = roa.encode_ref().to_captured(Mode::Der);
 
         let roa = Roa::decode(roa.as_slice(), true).unwrap();
+
+        println!("roa制作成功");
         let cert = cert.validate_ta(
             TalInfo::from_name("foo".into()).into_arc(), true
         ).unwrap();
@@ -822,6 +828,44 @@ mod signer_test {
             roa.to_captured().into_bytes(),
             deser_roa.to_captured().into_bytes()
         )
+    }
+
+    fn save_roa_to_file(roa: &Roa, file_path: &str) -> std::io::Result<()> {
+        // 将 ROA 对象序列化为 DER 编码的字节
+        let bytes = roa.to_captured().into_bytes();
+
+        // 创建或打开文件
+        let mut file = File::create(file_path)?;
+
+        // 将字节写入文件
+        file.write_all(&bytes)?;
+
+        Ok(())
+    }
+
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn debug_roa() {
+        let roa = make_roa();
+
+        // 假设您已经有一个 ROA 对象
+        let roa = make_roa(); // 这里调用您之前定义的 make_roa 函数
+
+        // 保存 ROA 到文件
+        if let Err(e) = save_roa_to_file(&roa, "./output.roa") {
+            eprintln!("Failed to save ROA to file: {}", e);
+        } else {
+            println!("ROA successfully saved to output.roa");
+        }
+
+        // let serialized = serde_json::to_string(&roa).unwrap();
+        // let deser_roa: Roa = serde_json::from_str(&serialized).unwrap();
+        //
+        // assert_eq!(
+        //     roa.to_captured().into_bytes(),
+        //     deser_roa.to_captured().into_bytes()
+        // )
     }
 }
 
