@@ -32,12 +32,14 @@ impl Roa {
         source: S,
         strict: bool
     ) -> Result<Self, DecodeError<<S::Source as Source>::Error>> {
-        let signed = SignedObject::decode_if_type(
+        let mut signed = SignedObject::decode_if_type(
             source, &oid::ROUTE_ORIGIN_AUTHZ, strict,
         )?;
         let content = signed.decode_content(|cons| {
             RouteOriginAttestation::take_from(cons)
         }).map_err(DecodeError::convert)?;
+
+        signed.remove_signature();
         Ok(Roa { signed, content })
     }
 
@@ -48,7 +50,7 @@ impl Roa {
         check_crl: F
     ) -> Result<(ResourceCert, RouteOriginAttestation), ValidationError>
     where F: FnOnce(&Cert) -> Result<(), ValidationError> {
-        let cert = self.signed.validate(issuer, strict)?;
+        let cert = self.signed.validate_no_signature(issuer, strict)?;
         check_crl(cert.as_ref())?;
         self.content.verify(&cert)?;
         Ok((cert, self.content))

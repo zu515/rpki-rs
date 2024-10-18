@@ -121,7 +121,8 @@ impl Cert {
     pub fn from_constructed<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<Self, DecodeError<S::Error>> {
-        let signed_data = SignedData::from_constructed(cons)?;
+        let mut signed_data = SignedData::from_constructed(cons)?;
+        /// signed_data.remove_signature();
         let tbs = signed_data.data().clone().decode(
             TbsCert::from_constructed
         ).map_err(DecodeError::convert)?;
@@ -241,6 +242,19 @@ impl Cert {
     ) -> Result<ResourceCert, ValidationError>  {
         self.validate_ee_at(issuer, strict, Time::now())
     }
+
+
+
+    pub fn validate_ee_at_no_signature(
+        self,
+        issuer: &ResourceCert,
+        strict: bool,
+        now: Time,
+    ) -> Result<ResourceCert, ValidationError>  {
+        self.inspect_ee(strict)?;
+        self.verify_ee_at_no_signature(issuer, strict, now).map_err(Into::into)
+    }
+
 
     /// Validates the certificate as an RPKI EE certificate at a time.
     ///
@@ -728,6 +742,16 @@ impl Cert {
         self, issuer: &ResourceCert, strict: bool,
     ) -> Result<ResourceCert, VerificationError> {
         self.verify_ee_at(issuer, strict, Time::now())
+    }
+
+
+
+    pub fn verify_ee_at_no_signature(
+        self, issuer: &ResourceCert, strict: bool, now: Time,
+    ) -> Result<ResourceCert, VerificationError> {
+        self.verify_validity(now)?;
+        self.verify_issuer_claim(issuer, strict)?;
+        self.verify_resources(issuer, strict)
     }
 
     /// Verifies the certificate as an RPKI EE certificate at a time.

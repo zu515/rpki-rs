@@ -22,7 +22,7 @@ use crate::crypto::{
 };
 use crate::util::base64;
 use super::error::{InspectionError, VerificationError};
-
+use bytes::Bytes;
 
 //------------ Functions -----------------------------------------------------
 
@@ -605,6 +605,12 @@ impl<Alg> SignedData<Alg> {
 
     pub fn signature(&self) -> &Signature<Alg> {
         &self.signature
+    }
+
+    /// 移除 SignedData 对象的签名，但保留算法信息
+    pub fn remove_signature(&mut self) {
+             // 将签名的值设置为空的 Bytes
+             self.signature.set_value(Bytes::new());
     }
 }
 

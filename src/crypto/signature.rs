@@ -262,5 +262,9 @@ impl<Alg> Signature<Alg> {
     pub fn unwrap(self) -> (Alg, Bytes) {
         (self.algorithm, self.value)
     }
+     /// 设置新的签名值
+     pub fn set_value(&mut self, value: Bytes) {
+        self.value = value;
+    }
 }
 
